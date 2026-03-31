@@ -1,0 +1,17 @@
+# Binary
+notifyq
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+
+# Go
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
