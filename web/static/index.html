@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NotifyQ — Push Notification Server</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen" class="screen">
+    <div class="auth-card">
+      <div class="logo">
+        <span class="logo-icon">&#128276;</span>
+        <h1>NotifyQ</h1>
+        <p>Open-source push notification server</p>
+      </div>
+      <form id="login-form">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="login-username" placeholder="admin" required />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="••••••" required />
+        </div>
+        <div id="login-error" class="error-msg"></div>
+        <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+      </form>
+      <p class="auth-switch">No account? <a href="#" id="go-register">Register</a></p>
+    </div>
+  </div>
+
+  <!-- Register Screen -->
+  <div id="register-screen" class="screen hidden">
+    <div class="auth-card">
+      <div class="logo">
+        <span class="logo-icon">&#128276;</span>
+        <h1>NotifyQ</h1>
+        <p>Create your account</p>
+      </div>
+      <form id="register-form">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="reg-username" placeholder="Choose a username" required />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="reg-password" placeholder="Min 6 characters" required />
+        </div>
+        <div id="register-error" class="error-msg"></div>
+        <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+      </form>
+      <p class="auth-switch">Already have an account? <a href="#" id="go-login">Sign In</a></p>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard" class="screen hidden">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <span class="logo-icon">&#128276;</span>
+        <span>NotifyQ</span>
+      </div>
+      <div class="topbar-right">
+        <span id="user-badge" class="user-badge"></span>
+        <span id="ws-status" class="ws-dot disconnected" title="WebSocket status"></span>
+        <button class="btn btn-sm btn-outline" id="logout-btn">Logout</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <nav>
+          <button class="nav-item active" data-panel="notifications">&#128276; Notifications</button>
+          <button class="nav-item" data-panel="apps">&#128273; Applications</button>
+          <button class="nav-item admin-only hidden" data-panel="users">&#128100; Users</button>
+        </nav>
+        <div class="sidebar-stats">
+          <div class="stat">
+            <span id="stat-total">0</span>
+            <small>Total</small>
+          </div>
+          <div class="stat">
+            <span id="stat-unread">0</span>
+            <small>Unread</small>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main content -->
+      <main class="main">
+
+        <!-- Notifications Panel -->
+        <div id="panel-notifications" class="panel">
+          <div class="panel-header">
+            <h2>Notifications</h2>
+            <div class="panel-actions">
+              <button class="btn btn-sm btn-outline" id="mark-all-read">Mark all read</button>
+              <button class="btn btn-sm btn-danger" id="delete-all-notif">Delete all</button>
+            </div>
+          </div>
+          <div id="notif-list" class="notif-list">
+            <div class="empty-state">No notifications yet.</div>
+          </div>
+          <div id="notif-pagination" class="pagination hidden">
+            <button class="btn btn-sm btn-outline" id="notif-prev" disabled>&#8592; Prev</button>
+            <span id="notif-page-info"></span>
+            <button class="btn btn-sm btn-outline" id="notif-next">Next &#8594;</button>
+          </div>
+        </div>
+
+        <!-- Apps Panel -->
+        <div id="panel-apps" class="panel hidden">
+          <div class="panel-header">
+            <h2>Applications</h2>
+            <button class="btn btn-sm btn-primary" id="add-app-btn">+ New App</button>
+          </div>
+          <div id="app-list" class="app-list"></div>
+
+          <!-- New App Form -->
+          <div id="add-app-form" class="modal-overlay hidden">
+            <div class="modal">
+              <h3>Create Application</h3>
+              <div class="field">
+                <label>Name</label>
+                <input type="text" id="app-name" placeholder="My Service" />
+              </div>
+              <div class="field">
+                <label>Description</label>
+                <input type="text" id="app-desc" placeholder="What sends notifications here?" />
+              </div>
+              <div id="app-token-result" class="token-box hidden">
+                <p><strong>Save your token — it won't be shown again:</strong></p>
+                <code id="app-token-value"></code>
+                <button class="btn btn-sm btn-outline" id="copy-token">Copy</button>
+              </div>
+              <div id="add-app-error" class="error-msg"></div>
+              <div class="modal-actions">
+                <button class="btn btn-outline" id="cancel-app">Cancel</button>
+                <button class="btn btn-primary" id="submit-app">Create</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Users Panel (admin) -->
+        <div id="panel-users" class="panel hidden">
+          <div class="panel-header">
+            <h2>Users</h2>
+            <button class="btn btn-sm btn-primary" id="add-user-btn">+ New User</button>
+          </div>
+          <div id="user-list" class="app-list"></div>
+          <div id="add-user-form" class="modal-overlay hidden">
+            <div class="modal">
+              <h3>Create User</h3>
+              <div class="field">
+                <label>Username</label>
+                <input type="text" id="new-user-name" />
+              </div>
+              <div class="field">
+                <label>Password</label>
+                <input type="password" id="new-user-pass" />
+              </div>
+              <div class="field checkbox-field">
+                <label><input type="checkbox" id="new-user-admin" /> Admin</label>
+              </div>
+              <div id="add-user-error" class="error-msg"></div>
+              <div class="modal-actions">
+                <button class="btn btn-outline" id="cancel-user">Cancel</button>
+                <button class="btn btn-primary" id="submit-user">Create</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
