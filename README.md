@@ -14,7 +14,7 @@ Send notifications from any service via a simple HTTP API and receive them in re
 - **Docker ready** — includes a production Dockerfile
 
 
-![NotifyQ dashboard showing the Applications panel](image.png)
+![NotifyQ dashboard showing the Applications panel](assets/image.png)
 
 ## Quick Start
 
