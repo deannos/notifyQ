@@ -18,3 +18,4 @@ Thumbs.db
 
 # Frontend
 ui/node_modules/
+ui/*.tsbuildinfo
