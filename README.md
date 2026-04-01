@@ -13,6 +13,9 @@ Send notifications from any service via a simple HTTP API and receive them in re
 - **SQLite backend** — zero external dependencies, single binary deployment
 - **Docker ready** — includes a production Dockerfile
 
+
+![NotifyQ dashboard showing the Applications panel](image.png)
+
 ## Quick Start
 
 ### Prerequisites
@@ -202,7 +205,8 @@ ws.onmessage = (e) => {
 ├── middleware/         # JWT auth, app token auth, admin guard
 ├── handlers/           # HTTP request handlers
 ├── router/             # Gin route registration
-├── web/static/         # Embedded web dashboard (HTML/JS/CSS)
+├── ui/                 # React + TypeScript frontend (Vite)
+├── web/static/         # Embedded web dashboard (built from ui/)
 ├── Dockerfile
 └── Makefile
 ```
@@ -210,11 +214,14 @@ ws.onmessage = (e) => {
 ## Development
 
 ```bash
-# Run in development mode
+# Build the UI and run the server
 make run
 
-# Build a binary
+# Build the UI and compile a production binary
 make build
+
+# Run the UI dev server with HMR (proxy to a running Go server)
+make ui-dev
 
 # Clean build artifacts and database
 make clean
