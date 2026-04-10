@@ -63,7 +63,7 @@ export function AppPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Applications</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Applications</h2>
         <MagneticButton size="sm" onClick={openModal}>+ New App</MagneticButton>
       </div>
 
@@ -80,10 +80,10 @@ export function AppPanel() {
         <AnimatePresence initial={false}>
           {apps.map(a => (
             <motion.div key={a.id} variants={listItem} exit="exit" layout>
-              <Card className="border-border bg-card hover:border-primary/50 transition-colors">
+              <Card className="border-0 bg-card card-glow hover:bg-accent/60 transition-all duration-200">
                 <CardContent className="p-4 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shrink-0">
-                    <KeyRoundIcon className="w-5 h-5 text-white" />
+                  <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+                    <KeyRoundIcon className="w-4 h-4 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm">{a.name}</p>

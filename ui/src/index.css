@@ -4,26 +4,27 @@
 
 @layer base {
   :root {
-    --background: 226 20% 8%;
-    --foreground: 240 10% 94%;
-    --card: 228 18% 14%;
-    --card-foreground: 240 10% 94%;
-    --border: 233 21% 24%;
-    --input: 233 21% 24%;
-    --ring: 247 80% 68%;
-    --primary: 247 80% 63%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 230 18% 19%;
-    --secondary-foreground: 240 10% 94%;
-    --muted: 230 18% 19%;
-    --muted-foreground: 240 6% 60%;
-    --accent: 230 18% 19%;
-    --accent-foreground: 240 10% 94%;
-    --destructive: 355 80% 60%;
+    /* ── Daylier-inspired dark amber theme ── */
+    --background: 240 5% 5%;          /* #0C0C0D near-black */
+    --foreground: 0 0% 97%;            /* #F7F7F7 crisp white */
+    --card: 240 4% 9%;                 /* #141416 dark charcoal card */
+    --card-foreground: 0 0% 97%;
+    --border: 240 4% 15%;              /* #222225 barely-there border */
+    --input: 240 4% 15%;
+    --ring: 38 72% 50%;                /* amber ring */
+    --primary: 38 72% 50%;             /* #C8902A warm amber */
+    --primary-foreground: 240 5% 5%;   /* dark text on amber */
+    --secondary: 240 4% 13%;           /* #1D1D20 subtle surface */
+    --secondary-foreground: 0 0% 97%;
+    --muted: 240 4% 13%;
+    --muted-foreground: 240 3% 55%;    /* #8A8A90 dim text */
+    --accent: 240 4% 16%;              /* #242427 hover surface */
+    --accent-foreground: 0 0% 97%;
+    --destructive: 358 72% 58%;        /* #E5474C red */
     --destructive-foreground: 0 0% 100%;
-    --success: 145 63% 49%;
-    --warning: 27 98% 50%;
-    --radius: 0.625rem;
+    --success: 151 55% 42%;            /* #30A46C green */
+    --warning: 38 90% 55%;             /* amber warning */
+    --radius: 0.75rem;
   }
 }
 
@@ -31,6 +32,19 @@
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
 }
+
+/* ── Daylier card glow effect ── */
+.card-glow {
+  box-shadow: 0 0 0 1px hsl(240 4% 15%), 0 8px 32px rgba(0,0,0,0.5);
+}
+.card-glow-amber {
+  box-shadow: 0 0 0 1px hsl(38 72% 50% / 0.25), 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 hsl(38 72% 50% / 0.1);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(240 4% 20%); border-radius: 9999px; }
 
 /* ── Shadcn dialog animations ── */
 @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }

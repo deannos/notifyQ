@@ -50,7 +50,7 @@ export function UserPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Users</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Users</h2>
         <MagneticButton size="sm" onClick={() => { setUsername(''); setPassword(''); setIsAdmin(false); setError(''); setShowModal(true); }}>+ New User</MagneticButton>
       </div>
 
@@ -65,13 +65,13 @@ export function UserPanel() {
         <AnimatePresence initial={false}>
           {users.map(u => (
             <motion.div key={u.id} variants={listItem} exit="exit" layout>
-              <Card className="border-border bg-card hover:border-primary/50 transition-colors">
+              <Card className="border-0 bg-card card-glow hover:bg-accent/60 transition-all duration-200">
                 <CardContent className="p-4 flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shrink-0">
-                    <UserCircleIcon className="w-5 h-5 text-white" />
+                  <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+                    <UserCircleIcon className="w-4 h-4 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <p className="font-semibold text-sm">{u.username} {u.is_admin && <span className="text-yellow-400">★</span>}</p>
+                    <p className="font-semibold text-sm flex items-center gap-1.5">{u.username} {u.is_admin && <span className="bg-primary/10 text-primary text-[10px] font-medium px-2 py-0.5 rounded-full">admin</span>}</p>
                     <p className="text-xs text-muted-foreground">Created: {new Date(u.created_at).toLocaleDateString()}</p>
                   </div>
                   <MagneticButton variant="destructive" size="sm" onClick={() => void deleteUser(u.id)}>

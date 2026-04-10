@@ -13,15 +13,21 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 type Panel = 'notifications' | 'apps' | 'users';
 
 const panelVariants = {
-  initial: { opacity: 0, y: 14 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.23, 1, 0.32, 1] as const } },
-  exit: { opacity: 0, y: -10, transition: { duration: 0.18 } },
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.28, ease: [0.23, 1, 0.32, 1] as const } },
+  exit:    { opacity: 0, y: -8, transition: { duration: 0.16 } },
 };
 
-const healthMeta: Record<HealthStatus, { label: string; color: string }> = {
-  ok:      { label: 'Server healthy',              color: 'hsl(145 63% 49%)' },
-  degraded:{ label: 'Degraded — DB unavailable',   color: 'hsl(355 80% 60%)' },
-  unknown: { label: 'Checking server…',            color: 'hsl(240 6% 60%)'  },
+const healthMeta: Record<HealthStatus, { label: string; dot: string }> = {
+  ok:       { label: 'Server healthy',            dot: 'bg-emerald-500' },
+  degraded: { label: 'Degraded — DB unavailable', dot: 'bg-red-500'     },
+  unknown:  { label: 'Checking…',                 dot: 'bg-zinc-500'    },
+};
+
+const navLabels: Record<Panel, string> = {
+  notifications: 'Notifications',
+  apps: 'Applications',
+  users: 'Users',
 };
 
 export function Dashboard() {
@@ -31,85 +37,111 @@ export function Dashboard() {
 
   const handleIncoming = useCallback((n: Notification) => setLiveNotif(n), []);
   const wsStatus = useWebSocket(token, handleIncoming);
-  const health = useHealthCheck();
+  const health   = useHealthCheck();
 
-  const navItems: { id: Panel; label: string }[] = [
-    { id: 'notifications', label: '🔔 Notifications' },
-    { id: 'apps', label: '🔑 Applications' },
-    ...(user?.is_admin ? [{ id: 'users' as Panel, label: '👤 Users' }] : []),
+  const navItems: Panel[] = [
+    'notifications',
+    'apps',
+    ...(user?.is_admin ? ['users' as Panel] : []),
   ];
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-screen bg-background">
-        {/* Topbar */}
-        <header className="flex items-center justify-between px-6 h-14 bg-card border-b border-border sticky top-0 z-50 shrink-0">
-          <div className="flex items-center gap-2.5 font-bold text-primary">
+      <div className="flex flex-col h-screen bg-background text-foreground antialiased">
+
+        {/* ── Topbar ── */}
+        <header className="flex items-center gap-6 px-6 h-[52px] bg-card/60 border-b border-border backdrop-blur-md sticky top-0 z-50 shrink-0">
+
+          {/* Brand */}
+          <div className="flex items-center gap-2 shrink-0">
             <motion.span
-              animate={{ rotate: [0, -15, 15, -10, 10, 0] }}
-              transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 4 }}
+              className="text-lg"
+              animate={{ rotate: [0, -12, 12, -8, 8, 0] }}
+              transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 5 }}
             >🔔</motion.span>
-            <span>NotifyQ</span>
+            <span className="text-sm font-semibold text-primary tracking-tight">NotifyQ</span>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Health indicator */}
+
+          {/* Tab navigation */}
+          <nav className="flex items-center gap-0.5">
+            {navItems.map(id => (
+              <motion.button
+                key={id}
+                onClick={() => setPanel(id)}
+                className={`relative px-3 py-1.5 text-sm rounded-md transition-colors duration-150 ${
+                  panel === id
+                    ? 'text-foreground font-medium'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                whileTap={{ scale: 0.97 }}
+              >
+                {panel === id && (
+                  <motion.span
+                    layoutId="tab-bg"
+                    className="absolute inset-0 rounded-md bg-accent"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">{navLabels[id]}</span>
+              </motion.button>
+            ))}
+          </nav>
+
+          {/* Right controls */}
+          <div className="ml-auto flex items-center gap-4">
+
+            {/* Health */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <motion.span
-                  className="text-xs font-semibold cursor-default select-none"
-                  style={{ color: healthMeta[health].color }}
-                  animate={health === 'degraded' ? { opacity: [1, 0.35, 1] } : {}}
+                <motion.div
+                  className="flex items-center gap-1.5 cursor-default"
+                  animate={health === 'degraded' ? { opacity: [1, 0.4, 1] } : {}}
                   transition={{ duration: 1.2, repeat: Infinity }}
                 >
-                  ● {health === 'ok' ? 'Healthy' : health === 'degraded' ? 'Degraded' : '…'}
-                </motion.span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${healthMeta[health].dot} ${health === 'ok' ? 'shadow-[0_0_6px_theme(colors.emerald.500)]' : ''}`} />
+                  <span className="text-xs text-muted-foreground hidden sm:inline">
+                    {health === 'ok' ? 'Healthy' : health === 'degraded' ? 'Degraded' : '…'}
+                  </span>
+                </motion.div>
               </TooltipTrigger>
-              <TooltipContent>{healthMeta[health].label}</TooltipContent>
+              <TooltipContent side="bottom">{healthMeta[health].label}</TooltipContent>
             </Tooltip>
 
-            {/* WS indicator */}
+            {/* WS */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <motion.span
-                  className={`inline-block w-2.5 h-2.5 rounded-full ${wsStatus === 'connected' ? 'bg-emerald-400' : 'bg-muted-foreground'}`}
-                  animate={wsStatus === 'connected' ? { scale: [1, 1.3, 1], opacity: [1, 0.6, 1] } : {}}
-                  transition={{ duration: 2, repeat: Infinity }}
+                  className={`w-1.5 h-1.5 rounded-full cursor-default ${
+                    wsStatus === 'connected'
+                      ? 'bg-emerald-400 shadow-[0_0_6px_theme(colors.emerald.400)]'
+                      : 'bg-zinc-600'
+                  }`}
+                  animate={wsStatus === 'connected' ? { scale: [1, 1.4, 1] } : {}}
+                  transition={{ duration: 2.5, repeat: Infinity }}
                 />
               </TooltipTrigger>
-              <TooltipContent>WebSocket {wsStatus}</TooltipContent>
+              <TooltipContent side="bottom">WebSocket {wsStatus}</TooltipContent>
             </Tooltip>
 
-            <span className="text-xs text-muted-foreground bg-secondary px-3 py-1 rounded-full border border-border">
-              👤 {user?.username}
-            </span>
-            <MagneticButton variant="outline" size="sm" onClick={logout}>Logout</MagneticButton>
+            {/* User */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary border border-border text-xs text-muted-foreground">
+              <span className="w-4 h-4 rounded-full bg-primary/20 flex items-center justify-center text-[10px] text-primary font-bold">
+                {user?.username?.[0]?.toUpperCase()}
+              </span>
+              <span className="hidden sm:inline">{user?.username}</span>
+            </div>
+
+            <MagneticButton variant="ghost" size="sm" onClick={logout}
+              className="text-muted-foreground hover:text-foreground text-xs px-2.5"
+            >
+              Logout
+            </MagneticButton>
           </div>
         </header>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar */}
-          <aside className="w-[220px] bg-card border-r border-border flex flex-col py-4 shrink-0">
-            <nav className="flex flex-col gap-0.5 px-2">
-              {navItems.map(item => (
-                <motion.button
-                  key={item.id}
-                  onClick={() => setPanel(item.id)}
-                  className={`text-left px-3 py-2.5 rounded-md text-sm transition-colors border-l-2 ${
-                    panel === item.id
-                      ? 'text-primary border-primary bg-primary/10'
-                      : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-secondary'
-                  }`}
-                  whileHover={{ x: 3 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                >
-                  {item.label}
-                </motion.button>
-              ))}
-            </nav>
-          </aside>
-
-          {/* Main */}
-          <main className="flex-1 overflow-y-auto p-6">
+        {/* ── Main content ── */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto px-6 py-8">
             <AnimatePresence mode="wait">
               {panel === 'notifications' && (
                 <motion.div key="notifications" {...panelVariants}>
@@ -127,8 +159,9 @@ export function Dashboard() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </main>
-        </div>
+          </div>
+        </main>
+
       </div>
     </TooltipProvider>
   );

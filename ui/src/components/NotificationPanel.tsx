@@ -80,37 +80,31 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Notifications</h2>
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">Notifications</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            <motion.span key={`t${total}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>{total}</motion.span> total ·{' '}
+            <motion.span key={`u${unreadCount}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-primary">{unreadCount} unread</motion.span>
+          </p>
+        </div>
         <div className="flex gap-2">
-          <MagneticButton variant="outline" size="sm" onClick={() => void markAllRead()}>Mark all read</MagneticButton>
-          <MagneticButton variant="destructive" size="sm" onClick={() => void deleteAll()}>Delete all</MagneticButton>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="flex gap-4">
-        <div className="text-center">
-          <motion.p key={`t${total}`} className="text-2xl font-bold text-primary" initial={{ scale: 1.3 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 400 }}>{total}</motion.p>
-          <p className="text-xs text-muted-foreground">Total</p>
-        </div>
-        <div className="text-center">
-          <motion.p key={`u${unreadCount}`} className="text-2xl font-bold text-primary" initial={{ scale: 1.3 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 400 }}>{unreadCount}</motion.p>
-          <p className="text-xs text-muted-foreground">Unread</p>
+          <MagneticButton variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => void markAllRead()}>Mark all read</MagneticButton>
+          <MagneticButton variant="ghost" size="sm" className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => void deleteAll()}>Delete all</MagneticButton>
         </div>
       </div>
 
       {/* List */}
-      <ScrollArea className="h-[calc(100vh-260px)]">
+      <ScrollArea className="h-[calc(100vh-200px)]">
         {notifs.length === 0 && (
-          <motion.p className="text-center py-10 text-muted-foreground" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <motion.p className="text-center py-16 text-muted-foreground text-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             No notifications yet.
           </motion.p>
         )}
         <motion.div
-          className="space-y-2.5 pr-3"
+          className="space-y-2 pr-3"
           key={offset}
           initial="hidden"
           animate="show"
@@ -119,22 +113,22 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
           <AnimatePresence initial={false}>
             {notifs.map(n => (
               <motion.div key={n.id} variants={listItem} exit="exit" layout transition={{ layout: { duration: 0.2 } }}>
-                <Card className={`border-border bg-card hover:border-primary/50 transition-colors ${!n.read ? 'border-l-2 border-l-primary' : ''}`}>
+                <Card className={`border-0 bg-card transition-all duration-200 hover:bg-accent/60 ${!n.read ? 'card-glow-amber' : 'card-glow'}`}>
                   <CardContent className="p-4 flex gap-3 items-start">
-                    <div className="mt-0.5">{priorityBadge(n.priority)}</div>
+                    <div className="mt-0.5 shrink-0">{priorityBadge(n.priority)}</div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm">{n.title}</p>
-                      <p className="text-muted-foreground text-xs mt-0.5">{n.message}</p>
-                      <div className="flex gap-2 mt-1.5 items-center flex-wrap">
-                        <span className="bg-secondary text-primary text-xs px-1.5 py-0.5 rounded">{n.app?.name ?? String(n.app_id)}</span>
-                        <span className="text-xs text-muted-foreground">{new Date(n.created_at).toLocaleString()}</span>
-                        {n.read && <span className="text-xs text-muted-foreground">✓ read</span>}
+                      <p className={`text-sm font-medium ${!n.read ? 'text-foreground' : 'text-muted-foreground'}`}>{n.title}</p>
+                      <p className="text-muted-foreground text-xs mt-0.5 leading-relaxed">{n.message}</p>
+                      <div className="flex gap-2 mt-2 items-center flex-wrap">
+                        <span className="bg-primary/10 text-primary text-[10px] font-medium px-2 py-0.5 rounded-full">{n.app?.name ?? String(n.app_id)}</span>
+                        <span className="text-[11px] text-muted-foreground">{new Date(n.created_at).toLocaleString()}</span>
+                        {n.read && <span className="text-[11px] text-muted-foreground/60">✓</span>}
                       </div>
                     </div>
                     <div className="flex gap-1 shrink-0">
                       {!n.read && (
-                        <motion.button onClick={() => void markRead(n.id)} className="p-1 text-muted-foreground hover:text-foreground transition-colors" whileHover={{ scale: 1.2 }} title="Mark read">
-                          <CheckIcon className="w-4 h-4" />
+                        <motion.button onClick={() => void markRead(n.id)} className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" whileHover={{ scale: 1.1 }} title="Mark read">
+                          <CheckIcon className="w-3.5 h-3.5" />
                         </motion.button>
                       )}
                       <motion.button onClick={() => void deleteNotif(n.id)} className="p-1 text-muted-foreground hover:text-destructive transition-colors" whileHover={{ scale: 1.2 }} title="Delete">
