@@ -41,7 +41,7 @@ export function UserPanel() {
     } catch (err) { setError((err as Error).message); }
   };
 
-  const deleteUser = async (id: number) => {
+  const deleteUser = async (id: string) => {
     if (!confirm('Delete this user and all their data?')) return;
     await api.del(`/api/v1/user/${id}`);
     setUsers(prev => prev.filter(u => u.id !== id));

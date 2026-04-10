@@ -1,20 +1,22 @@
 export interface User {
-  id: number;
+  id: string;
   username: string;
   is_admin: boolean;
   created_at: string;
 }
 
 export interface App {
-  id: number;
+  id: string;
+  user_id: string;
   name: string;
   description: string;
   token?: string;
+  created_at: string;
 }
 
 export interface Notification {
-  id: number;
-  app_id: number;
+  id: string;
+  app_id: string;
   app?: App;
   title: string;
   message: string;

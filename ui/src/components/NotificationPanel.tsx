@@ -45,12 +45,12 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
     onLiveConsumed();
   }, [liveNotif, onLiveConsumed]);
 
-  const markRead = async (id: number) => {
+  const markRead = async (id: string) => {
     await api.put(`/api/v1/notification/${id}/read`);
     setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
-  const deleteNotif = async (id: number) => {
+  const deleteNotif = async (id: string) => {
     await api.del(`/api/v1/notification/${id}`);
     setNotifs(prev => prev.filter(n => n.id !== id));
     setTotal(t => Math.max(0, t - 1));

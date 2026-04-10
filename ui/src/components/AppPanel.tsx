@@ -48,13 +48,13 @@ export function AppPanel() {
     } catch (err) { setError((err as Error).message); }
   };
 
-  const deleteApp = async (id: number) => {
+  const deleteApp = async (id: string) => {
     if (!confirm('Delete this application and all its notifications?')) return;
     await api.del(`/api/v1/application/${id}`);
     setApps(prev => prev.filter(a => a.id !== id));
   };
 
-  const rotateToken = async (id: number) => {
+  const rotateToken = async (id: string) => {
     if (!confirm('Rotate the token? The old token will stop working immediately.')) return;
     const data = await api.post<{ token: string }>(`/api/v1/application/${id}/token`);
     alert(`New token (save this — it won't be shown again):\n\n${data.token}`);
