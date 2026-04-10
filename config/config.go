@@ -6,13 +6,14 @@ import (
 )
 
 type Config struct {
-	ListenAddr          string
-	DatabasePath        string
-	JWTSecret           string
-	DefaultAdminUser    string
-	DefaultAdminPass    string
-	AllowRegistration   bool
-	JWTExpiryHours      int
+	ListenAddr             string
+	DatabasePath           string
+	JWTSecret              string
+	DefaultAdminUser       string
+	DefaultAdminPass       string
+	AllowRegistration      bool
+	JWTExpiryHours         int
+	RetentionDays          int // 0 = disabled
 }
 
 func Load() *Config {
@@ -24,6 +25,7 @@ func Load() *Config {
 		DefaultAdminPass:  getEnv("DEFAULT_ADMIN_PASS", "admin"),
 		AllowRegistration: getBoolEnv("ALLOW_REGISTRATION", true),
 		JWTExpiryHours:    getIntEnv("JWT_EXPIRY_HOURS", 24),
+		RetentionDays:     getIntEnv("RETENTION_DAYS", 30),
 	}
 }
 
