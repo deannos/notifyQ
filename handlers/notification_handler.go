@@ -79,7 +79,7 @@ func ListNotifications(database *gorm.DB) gin.HandlerFunc {
 
 		var total int64
 		database.Model(&models.Notification{}).
-			Joins("App").
+			Joins("JOIN apps ON apps.id = notifications.app_id").
 			Where("apps.user_id = ?", userID).
 			Count(&total)
 
@@ -90,7 +90,8 @@ func ListNotifications(database *gorm.DB) gin.HandlerFunc {
 
 		var notifs []models.Notification
 		if err := database.
-			Joins("App").
+			Preload("App").
+			Joins("JOIN apps ON apps.id = notifications.app_id").
 			Where("apps.user_id = ?", userID).
 			Order("notifications.created_at DESC").
 			Limit(limit).
