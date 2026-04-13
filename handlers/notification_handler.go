@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -60,7 +62,31 @@ func SendNotification(database *gorm.DB, h *hub.Hub) gin.HandlerFunc {
 		payload, _ := json.Marshal(wsEvent{Event: "notification", Notification: &notif})
 		h.Send(app.UserID, payload)
 
+		if app.WebhookURL != "" {
+			go fireWebhook(app.WebhookURL, &notif)
+		}
+
 		c.JSON(http.StatusCreated, notif)
+	}
+}
+
+func fireWebhook(url string, notif *models.Notification) {
+	body, _ := json.Marshal(notif)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		log.Printf("webhook: build request error: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("webhook: delivery error for %s: %v", url, err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		log.Printf("webhook: non-2xx response %d from %s", resp.StatusCode, url)
 	}
 }
 
@@ -77,11 +103,35 @@ func ListNotifications(database *gorm.DB) gin.HandlerFunc {
 			offset = 0
 		}
 
+		// Optional filters
+		appID   := c.Query("app_id")
+		readStr := c.Query("read")
+		prioStr := c.Query("priority")
+		q       := c.Query("q")
+
+		applyFilters := func(tx *gorm.DB) *gorm.DB {
+			tx = tx.Joins("JOIN apps ON apps.id = notifications.app_id").
+				Where("apps.user_id = ?", userID)
+			if appID != "" {
+				tx = tx.Where("notifications.app_id = ?", appID)
+			}
+			if readStr != "" {
+				tx = tx.Where("notifications.read = ?", readStr == "true")
+			}
+			if prioStr != "" {
+				if prio, err := strconv.Atoi(prioStr); err == nil {
+					tx = tx.Where("notifications.priority = ?", prio)
+				}
+			}
+			if q != "" {
+				like := "%" + q + "%"
+				tx = tx.Where("notifications.title LIKE ? OR notifications.message LIKE ?", like, like)
+			}
+			return tx
+		}
+
 		var total int64
-		database.Model(&models.Notification{}).
-			Joins("JOIN apps ON apps.id = notifications.app_id").
-			Where("apps.user_id = ?", userID).
-			Count(&total)
+		applyFilters(database.Model(&models.Notification{})).Count(&total)
 
 		if total == 0 {
 			c.JSON(http.StatusOK, gin.H{"notifications": []interface{}{}, "total": 0})
@@ -89,10 +139,7 @@ func ListNotifications(database *gorm.DB) gin.HandlerFunc {
 		}
 
 		var notifs []models.Notification
-		if err := database.
-			Preload("App").
-			Joins("JOIN apps ON apps.id = notifications.app_id").
-			Where("apps.user_id = ?", userID).
+		if err := applyFilters(database.Preload("App")).
 			Order("notifications.created_at DESC").
 			Limit(limit).
 			Offset(offset).
