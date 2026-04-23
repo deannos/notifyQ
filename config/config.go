@@ -13,8 +13,9 @@ type Config struct {
 	DefaultAdminPass       string
 	AllowRegistration      bool
 	JWTExpiryHours         int
-	RetentionDays          int // 0 = disabled
+	RetentionDays          int    // 0 = disabled
 	AllowedOrigins         string // comma-separated, "*" = allow all
+	Env                    string // "development" | "production"
 }
 
 func Load() *Config {
@@ -28,6 +29,7 @@ func Load() *Config {
 		JWTExpiryHours:    getIntEnv("JWT_EXPIRY_HOURS", 24),
 		RetentionDays:     getIntEnv("RETENTION_DAYS", 30),
 		AllowedOrigins:    getEnv("ALLOWED_ORIGINS", "*"),
+		Env:               getEnv("ENV", "development"),
 	}
 }
 
