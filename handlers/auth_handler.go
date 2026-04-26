@@ -1,16 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/deannos/notification-queue/auth"
 	"github.com/deannos/notification-queue/config"
 	"github.com/deannos/notification-queue/models"
+	"github.com/deannos/notification-queue/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type loginRequest struct {
@@ -23,7 +24,7 @@ type registerRequest struct {
 	Password string `json:"password" binding:"required,min=6"`
 }
 
-func Login(database *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+func Login(users storage.UserRepository, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req loginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -31,8 +32,8 @@ func Login(database *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		var user models.User
-		if err := database.Where("username = ?", req.Username).First(&user).Error; err != nil {
+		user, err := users.FindByUsername(c.Request.Context(), req.Username)
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
 		}
@@ -56,12 +57,10 @@ func Login(database *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func Register(database *gorm.DB, cfg *config.Config) gin.HandlerFunc {
+func Register(users storage.UserRepository, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !cfg.AllowRegistration {
-			// Still allow if no users exist (bootstrap).
-			var count int64
-			database.Model(&models.User{}).Count(&count)
+			count, _ := users.Count(c.Request.Context())
 			if count > 0 {
 				c.JSON(http.StatusForbidden, gin.H{"error": "registration is disabled"})
 				return
@@ -80,24 +79,14 @@ func Register(database *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		var isAdmin bool
-		// Wrap in a transaction so two simultaneous first-registrations don't both become admin.
-		err = database.Transaction(func(tx *gorm.DB) error {
-			var count int64
-			if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
-				return err
-			}
-			isAdmin = count == 0
+		u := &models.User{
+			ID:        uuid.NewString(),
+			Username:  req.Username,
+			Password:  string(hash),
+			CreatedAt: time.Now(),
+		}
 
-			user := models.User{
-				ID:        uuid.NewString(),
-				Username:  req.Username,
-				Password:  string(hash),
-				IsAdmin:   isAdmin,
-				CreatedAt: time.Now(),
-			}
-			return tx.Create(&user).Error
-		})
+		isAdmin, err := users.CreateFirstAdmin(c.Request.Context(), u)
 		if err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
 			return
@@ -112,11 +101,11 @@ func Register(database *gorm.DB, cfg *config.Config) gin.HandlerFunc {
 }
 
 // EnsureAdminUser creates the default admin account if no users exist.
-func EnsureAdminUser(database *gorm.DB, username, password string) error {
-	var count int64
-	database.Model(&models.User{}).Count(&count)
-	if count > 0 {
-		return nil
+func EnsureAdminUser(users storage.UserRepository, username, password string) error {
+	ctx := context.Background()
+	count, err := users.Count(ctx)
+	if err != nil || count > 0 {
+		return err
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -124,11 +113,11 @@ func EnsureAdminUser(database *gorm.DB, username, password string) error {
 		return err
 	}
 
-	return database.Create(&models.User{
+	return users.Create(ctx, &models.User{
 		ID:        uuid.NewString(),
 		Username:  username,
 		Password:  string(hash),
 		IsAdmin:   true,
 		CreatedAt: time.Now(),
-	}).Error
+	})
 }
