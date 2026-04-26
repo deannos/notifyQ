@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -21,9 +22,9 @@ type ipRateLimiter struct {
 	b        int
 }
 
-func newIPRateLimiter(r rate.Limit, b int) *ipRateLimiter {
+func newIPRateLimiter(ctx context.Context, r rate.Limit, b int) *ipRateLimiter {
 	rl := &ipRateLimiter{visitors: make(map[string]*visitor), r: r, b: b}
-	go rl.cleanupLoop()
+	go rl.cleanupLoop(ctx)
 	return rl
 }
 
@@ -39,21 +40,30 @@ func (rl *ipRateLimiter) get(ip string) *rate.Limiter {
 	return v.limiter
 }
 
-func (rl *ipRateLimiter) cleanupLoop() {
-	for range time.Tick(5 * time.Minute) {
-		rl.mu.Lock()
-		for ip, v := range rl.visitors {
-			if time.Since(v.lastSeen) > 10*time.Minute {
-				delete(rl.visitors, ip)
+func (rl *ipRateLimiter) cleanupLoop(ctx context.Context) {
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			cutoff := time.Now().Add(-10 * time.Minute)
+			rl.mu.Lock()
+			for ip, v := range rl.visitors {
+				if v.lastSeen.Before(cutoff) {
+					delete(rl.visitors, ip)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
 // RateLimit returns a middleware that allows r requests/second with a burst of b per IP.
-func RateLimit(r rate.Limit, b int) gin.HandlerFunc {
-	rl := newIPRateLimiter(r, b)
+// The cleanup goroutine stops when ctx is cancelled.
+func RateLimit(ctx context.Context, r rate.Limit, b int) gin.HandlerFunc {
+	rl := newIPRateLimiter(ctx, r, b)
 	return func(c *gin.Context) {
 		if !rl.get(c.ClientIP()).Allow() {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
