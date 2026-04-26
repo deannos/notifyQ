@@ -7,14 +7,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/deannos/notification-queue/hub"
 	"github.com/deannos/notification-queue/logger"
 	"github.com/deannos/notification-queue/middleware"
 	"github.com/deannos/notification-queue/models"
+	"github.com/deannos/notification-queue/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 type sendNotificationRequest struct {
@@ -24,11 +23,11 @@ type sendNotificationRequest struct {
 }
 
 type wsEvent struct {
-	Event        string              `json:"event"`
+	Event        string               `json:"event"`
 	Notification *models.Notification `json:"notification"`
 }
 
-func SendNotification(database *gorm.DB, h *hub.Hub) gin.HandlerFunc {
+func SendNotification(notifs storage.NotificationRepository, pub storage.NotificationPublisher) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		app := c.MustGet(middleware.CtxApp).(*models.App)
 
@@ -52,16 +51,14 @@ func SendNotification(database *gorm.DB, h *hub.Hub) gin.HandlerFunc {
 			CreatedAt: time.Now(),
 		}
 
-		if err := database.Create(&notif).Error; err != nil {
+		if err := notifs.Create(c.Request.Context(), &notif); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save notification"})
 			return
 		}
 
-		// Attach app info for the WebSocket payload.
 		notif.App = app
-
 		payload, _ := json.Marshal(wsEvent{Event: "notification", Notification: &notif})
-		h.Send(app.UserID, payload)
+		pub.Publish(c.Request.Context(), app.UserID, payload)
 
 		if app.WebhookURL != "" {
 			go fireWebhook(app.WebhookURL, &notif)
@@ -94,7 +91,7 @@ func fireWebhook(url string, notif *models.Notification) {
 	}
 }
 
-func ListNotifications(database *gorm.DB) gin.HandlerFunc {
+func ListNotifications(notifs storage.NotificationRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 
@@ -107,53 +104,33 @@ func ListNotifications(database *gorm.DB) gin.HandlerFunc {
 			offset = 0
 		}
 
-		// Optional filters
-		appID   := c.Query("app_id")
-		readStr := c.Query("read")
-		prioStr := c.Query("priority")
-		q       := c.Query("q")
-
-		applyFilters := func(tx *gorm.DB) *gorm.DB {
-			tx = tx.Joins("JOIN apps ON apps.id = notifications.app_id").
-				Where("apps.user_id = ?", userID)
-			if appID != "" {
-				tx = tx.Where("notifications.app_id = ?", appID)
+		f := storage.NotificationFilter{
+			AppID:  c.Query("app_id"),
+			Query:  c.Query("q"),
+			Limit:  limit,
+			Offset: offset,
+		}
+		if readStr := c.Query("read"); readStr != "" {
+			b := readStr == "true"
+			f.Read = &b
+		}
+		if prioStr := c.Query("priority"); prioStr != "" {
+			if p, err := strconv.Atoi(prioStr); err == nil {
+				f.Priority = &p
 			}
-			if readStr != "" {
-				tx = tx.Where("notifications.read = ?", readStr == "true")
-			}
-			if prioStr != "" {
-				if prio, err := strconv.Atoi(prioStr); err == nil {
-					tx = tx.Where("notifications.priority = ?", prio)
-				}
-			}
-			if q != "" {
-				like := "%" + q + "%"
-				tx = tx.Where("notifications.title LIKE ? OR notifications.message LIKE ?", like, like)
-			}
-			return tx
 		}
 
-		var total int64
-		applyFilters(database.Model(&models.Notification{})).Count(&total)
-
-		if total == 0 {
-			c.JSON(http.StatusOK, gin.H{"notifications": []interface{}{}, "total": 0})
-			return
-		}
-
-		var notifs []models.Notification
-		if err := applyFilters(database.Preload("App")).
-			Order("notifications.created_at DESC").
-			Limit(limit).
-			Offset(offset).
-			Find(&notifs).Error; err != nil {
+		list, total, err := notifs.List(c.Request.Context(), userID, f)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 			return
 		}
+		if list == nil {
+			list = []models.Notification{}
+		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"notifications": notifs,
+			"notifications": list,
 			"total":         total,
 			"limit":         limit,
 			"offset":        offset,
@@ -161,15 +138,11 @@ func ListNotifications(database *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func GetNotification(database *gorm.DB) gin.HandlerFunc {
+func GetNotification(notifs storage.NotificationRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
-		notifID := c.Param("id")
 
-		var notif models.Notification
-		err := database.
-			Preload("App").
-			First(&notif, "id = ?", notifID).Error
+		notif, err := notifs.FindByID(c.Request.Context(), c.Param("id"))
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
 			return
@@ -184,13 +157,13 @@ func GetNotification(database *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func MarkRead(database *gorm.DB) gin.HandlerFunc {
+func MarkRead(notifs storage.NotificationRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 		notifID := c.Param("id")
 
-		var notif models.Notification
-		if err := database.Preload("App").First(&notif, "id = ?", notifID).Error; err != nil {
+		notif, err := notifs.FindByID(c.Request.Context(), notifID)
+		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
 			return
 		}
@@ -200,18 +173,22 @@ func MarkRead(database *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		database.Model(&notif).Update("read", true)
+		if err := notifs.MarkRead(c.Request.Context(), notifID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "marked as read"})
 	}
 }
 
-func DeleteNotification(database *gorm.DB) gin.HandlerFunc {
+func DeleteNotification(notifs storage.NotificationRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 		notifID := c.Param("id")
 
-		var notif models.Notification
-		if err := database.Preload("App").First(&notif, "id = ?", notifID).Error; err != nil {
+		notif, err := notifs.FindByID(c.Request.Context(), notifID)
+		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
 			return
 		}
@@ -221,20 +198,28 @@ func DeleteNotification(database *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		database.Delete(&notif)
+		if err := notifs.Delete(c.Request.Context(), notifID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "notification deleted"})
 	}
 }
 
-func DeleteAllNotifications(database *gorm.DB) gin.HandlerFunc {
+func DeleteAllNotifications(apps storage.AppRepository, notifs storage.NotificationRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 
-		var appIDs []string
-		database.Model(&models.App{}).Where("user_id = ?", userID).Pluck("id", &appIDs)
+		appIDs, err := apps.IDsByUser(c.Request.Context(), userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
+		}
 
-		if len(appIDs) > 0 {
-			database.Where("app_id IN ?", appIDs).Delete(&models.Notification{})
+		if err := notifs.DeleteByAppIDs(c.Request.Context(), appIDs); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
+			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "all notifications deleted"})
