@@ -7,9 +7,9 @@ import (
 	"github.com/deannos/notification-queue/auth"
 	"github.com/deannos/notification-queue/middleware"
 	"github.com/deannos/notification-queue/models"
+	"github.com/deannos/notification-queue/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type createAppRequest struct {
@@ -24,25 +24,24 @@ type updateAppRequest struct {
 	WebhookURL  string `json:"webhook_url" binding:"omitempty,url,max=500"`
 }
 
-func ListApps(database *gorm.DB) gin.HandlerFunc {
+func ListApps(apps storage.AppRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 
-		var apps []models.App
-		if err := database.Where("user_id = ?", userID).Find(&apps).Error; err != nil {
+		list, err := apps.ListByUser(c.Request.Context(), userID)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 			return
 		}
 
-		// Hide tokens in list response for security.
-		for i := range apps {
-			apps[i].Token = ""
+		for i := range list {
+			list[i].Token = ""
 		}
-		c.JSON(http.StatusOK, apps)
+		c.JSON(http.StatusOK, list)
 	}
 }
 
-func CreateApp(database *gorm.DB) gin.HandlerFunc {
+func CreateApp(apps storage.AppRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 
@@ -66,27 +65,26 @@ func CreateApp(database *gorm.DB) gin.HandlerFunc {
 			WebhookURL:  req.WebhookURL,
 			TokenPrefix: auth.TokenPrefix(plainToken),
 			TokenHash:   auth.HashToken(plainToken),
-			Token:       plainToken, // returned once; not stored
+			Token:       plainToken,
 			CreatedAt:   time.Now(),
 		}
 
-		if err := database.Create(&app).Error; err != nil {
+		if err := apps.Create(c.Request.Context(), &app); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create app"})
 			return
 		}
 
-		// Token is returned once — subsequent list calls will omit it.
 		c.JSON(http.StatusCreated, app)
 	}
 }
 
-func UpdateApp(database *gorm.DB) gin.HandlerFunc {
+func UpdateApp(apps storage.AppRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 		appID := c.Param("id")
 
-		var app models.App
-		if err := database.Where("id = ? AND user_id = ?", appID, userID).First(&app).Error; err != nil {
+		app, err := apps.FindByOwner(c.Request.Context(), appID, userID)
+		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 			return
 		}
@@ -97,7 +95,7 @@ func UpdateApp(database *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		updates := map[string]interface{}{}
+		updates := map[string]any{}
 		if req.Name != "" {
 			updates["name"] = req.Name
 		}
@@ -108,7 +106,7 @@ func UpdateApp(database *gorm.DB) gin.HandlerFunc {
 			updates["webhook_url"] = req.WebhookURL
 		}
 
-		if err := database.Model(&app).Updates(updates).Error; err != nil {
+		if err := apps.Update(c.Request.Context(), app, updates); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update app"})
 			return
 		}
@@ -118,21 +116,17 @@ func UpdateApp(database *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func DeleteApp(database *gorm.DB) gin.HandlerFunc {
+func DeleteApp(apps storage.AppRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 		appID := c.Param("id")
 
-		var app models.App
-		if err := database.Where("id = ? AND user_id = ?", appID, userID).First(&app).Error; err != nil {
+		if _, err := apps.FindByOwner(c.Request.Context(), appID, userID); err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 			return
 		}
 
-		// Hard-delete associated notifications first.
-		database.Unscoped().Where("app_id = ?", appID).Delete(&models.Notification{})
-
-		if err := database.Delete(&app).Error; err != nil {
+		if err := apps.Delete(c.Request.Context(), appID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete app"})
 			return
 		}
@@ -141,13 +135,13 @@ func DeleteApp(database *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-func RotateToken(database *gorm.DB) gin.HandlerFunc {
+func RotateToken(apps storage.AppRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
 		appID := c.Param("id")
 
-		var app models.App
-		if err := database.Where("id = ? AND user_id = ?", appID, userID).First(&app).Error; err != nil {
+		app, err := apps.FindByOwner(c.Request.Context(), appID, userID)
+		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "app not found"})
 			return
 		}
@@ -158,11 +152,11 @@ func RotateToken(database *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"token":        auth.HashToken(plainToken),
 			"token_prefix": auth.TokenPrefix(plainToken),
 		}
-		if err := database.Model(&app).Updates(updates).Error; err != nil {
+		if err := apps.Update(c.Request.Context(), app, updates); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to rotate token"})
 			return
 		}
