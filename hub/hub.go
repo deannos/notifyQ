@@ -1,11 +1,13 @@
 package hub
 
 import (
-	"log"
+	"context"
 	"sync"
 	"time"
 
+	"github.com/deannos/notification-queue/logger"
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 const (
@@ -54,8 +56,12 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.UserID] = append(h.clients[client.UserID], client)
+			total := len(h.clients[client.UserID])
 			h.mu.Unlock()
-			log.Printf("hub: client registered user=%s total=%d", client.UserID, len(h.clients[client.UserID]))
+			logger.L.Info("ws client registered",
+				zap.String("user_id", client.UserID),
+				zap.Int("total", total),
+			)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -71,7 +77,7 @@ func (h *Hub) Run() {
 				delete(h.clients, client.UserID)
 			}
 			h.mu.Unlock()
-			log.Printf("hub: client unregistered user=%s", client.UserID)
+			logger.L.Info("ws client unregistered", zap.String("user_id", client.UserID))
 
 		case msg := <-h.broadcast:
 			h.mu.RLock()
@@ -91,9 +97,14 @@ func (h *Hub) Run() {
 	}
 }
 
-// Send broadcasts a JSON payload to all connections belonging to userID.
+// Send broadcasts a payload to all connections belonging to userID.
 func (h *Hub) Send(userID string, payload []byte) {
 	h.broadcast <- &Broadcast{UserID: userID, Payload: payload}
+}
+
+// Publish satisfies storage.NotificationPublisher.
+func (h *Hub) Publish(_ context.Context, userID string, payload []byte) {
+	h.Send(userID, payload)
 }
 
 // NewClient creates a Client and registers it with the hub.
