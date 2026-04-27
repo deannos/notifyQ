@@ -3,7 +3,10 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -68,27 +71,59 @@ func SendNotification(notifs storage.NotificationRepository, pub storage.Notific
 	}
 }
 
-func fireWebhook(url string, notif *models.Notification) {
+func fireWebhook(rawURL string, notif *models.Notification) {
+	if err := validateWebhookURL(rawURL); err != nil {
+		logger.L.Warn("webhook blocked", zap.String("url", rawURL), zap.Error(err))
+		return
+	}
+
 	body, _ := json.Marshal(notif)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, rawURL, bytes.NewReader(body))
 	if err != nil {
-		logger.L.Error("webhook build request failed", zap.String("url", url), zap.Error(err))
+		logger.L.Error("webhook build request failed", zap.String("url", rawURL), zap.Error(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.L.Warn("webhook delivery failed", zap.String("url", url), zap.Error(err))
+		logger.L.Warn("webhook delivery failed", zap.String("url", rawURL), zap.Error(err))
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		logger.L.Warn("webhook non-2xx response",
-			zap.String("url", url),
+			zap.String("url", rawURL),
 			zap.Int("status", resp.StatusCode),
 		)
 	}
+}
+
+// validateWebhookURL resolves the hostname and rejects private/loopback/link-local
+// addresses to prevent SSRF attacks.
+func validateWebhookURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("scheme %q not allowed", u.Scheme)
+	}
+	host := u.Hostname()
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("dns lookup failed: %w", err)
+	}
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("destination %s resolves to a private/internal address", host)
+		}
+	}
+	return nil
 }
 
 func ListNotifications(notifs storage.NotificationRepository) gin.HandlerFunc {
