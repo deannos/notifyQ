@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/deannos/notification-queue/config"
 	"github.com/deannos/notification-queue/handlers"
@@ -25,6 +26,19 @@ func Setup(
 	cfg *config.Config,
 ) *gin.Engine {
 	r := gin.New()
+
+	// Restrict which upstream IPs may set X-Forwarded-For so that ClientIP()
+	// and the rate limiter cannot be spoofed by arbitrary clients.
+	if cfg.TrustedProxies == "" {
+		_ = r.SetTrustedProxies(nil)
+	} else {
+		proxies := strings.Split(cfg.TrustedProxies, ",")
+		for i, p := range proxies {
+			proxies[i] = strings.TrimSpace(p)
+		}
+		_ = r.SetTrustedProxies(proxies)
+	}
+
 	r.Use(gin.Recovery(), middleware.RequestID(), middleware.ZapLogger())
 
 	r.Use(func(c *gin.Context) {
@@ -62,8 +76,8 @@ func Setup(
 		appAuth.POST("/message", handlers.SendNotification(notifs, pub))
 	}
 
-	// --- WebSocket ---
-	r.GET("/ws", middleware.WSJWTAuth(cfg), handlers.WebSocketHandler(h, tickets, cfg))
+	// --- WebSocket --- auth is handled inside the handler (ticket or JWT)
+	r.GET("/ws", handlers.WebSocketHandler(h, tickets, cfg))
 
 	// --- User-authenticated API ---
 	api := r.Group("/api/v1")
