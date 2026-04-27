@@ -30,9 +30,9 @@ func ZapLogger() gin.HandlerFunc {
 		start := time.Now()
 		c.Next()
 
-		reqID, _ := c.Get(CtxRequestID)
+		reqID := c.GetString(CtxRequestID)
 		logger.L.Info("request",
-			zap.String("request_id", reqID.(string)),
+			zap.String("request_id", reqID),
 			zap.String("method", c.Request.Method),
 			zap.String("path", c.Request.URL.Path),
 			zap.Int("status", c.Writer.Status()),
