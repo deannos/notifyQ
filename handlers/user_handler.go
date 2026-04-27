@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/deannos/notification-queue/config"
@@ -56,7 +57,11 @@ func CreateUser(users storage.UserRepository, cfg *config.Config) gin.HandlerFun
 		}
 
 		if err := users.Create(c.Request.Context(), &user); err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
+			if strings.Contains(err.Error(), "UNIQUE") {
+				c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			}
 			return
 		}
 
