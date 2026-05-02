@@ -34,9 +34,6 @@ func newUpgrader(cfg *config.Config) websocket.Upgrader {
 	}
 }
 
-// WebSocketHandler handles WebSocket upgrades. Authentication is resolved here
-// because the route no longer carries WSJWTAuth middleware — ticket-based auth
-// must bypass the JWT check entirely.
 func WebSocketHandler(h *hub.Hub, tickets *hub.TicketStore, cfg *config.Config) gin.HandlerFunc {
 	upgrader := newUpgrader(cfg)
 	return func(c *gin.Context) {
@@ -57,8 +54,7 @@ func WebSocketHandler(h *hub.Hub, tickets *hub.TicketStore, cfg *config.Config) 
 }
 
 // resolveWSUser authenticates a WebSocket request via one-time ticket or JWT.
-// Returns the userID and true on success; writes an error response and returns
-// false on failure.
+// Returns the userID and true on success; writes the error response and returns false on failure.
 func resolveWSUser(c *gin.Context, tickets *hub.TicketStore, cfg *config.Config) (string, bool) {
 	if ticket := c.Query("ticket"); ticket != "" {
 		id, ok := tickets.Consume(ticket)
@@ -72,10 +68,7 @@ func resolveWSUser(c *gin.Context, tickets *hub.TicketStore, cfg *config.Config)
 	// Fall back to JWT — accept ?token= (WebSocket) or Authorization: Bearer.
 	token := c.Query("token")
 	if token == "" {
-		header := c.GetHeader("Authorization")
-		if parts := strings.SplitN(header, " ", 2); len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
-			token = parts[1]
-		}
+		token = middleware.ExtractBearerToken(c)
 	}
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing token or ticket"})
@@ -88,7 +81,6 @@ func resolveWSUser(c *gin.Context, tickets *hub.TicketStore, cfg *config.Config)
 		return "", false
 	}
 
-	// Propagate claims so downstream middleware (e.g. request logging) can read them.
 	c.Set(middleware.CtxUserID, claims.UserID)
 	c.Set(middleware.CtxIsAdmin, claims.IsAdmin)
 	return claims.UserID, true
