@@ -173,21 +173,28 @@ func ListNotifications(notifs storage.NotificationRepository) gin.HandlerFunc {
 	}
 }
 
+// fetchOwnedNotification fetches a notification by ID and verifies it belongs to userID.
+// On failure it writes the error response and returns nil.
+func fetchOwnedNotification(c *gin.Context, notifs storage.NotificationRepository, notifID, userID string) *models.Notification {
+	notif, err := notifs.FindByID(c.Request.Context(), notifID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		return nil
+	}
+	if notif.App == nil || notif.App.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return nil
+	}
+	return notif
+}
+
 func GetNotification(notifs storage.NotificationRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString(middleware.CtxUserID)
-
-		notif, err := notifs.FindByID(c.Request.Context(), c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		notif := fetchOwnedNotification(c, notifs, c.Param("id"), userID)
+		if notif == nil {
 			return
 		}
-
-		if notif.App == nil || notif.App.UserID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
-			return
-		}
-
 		c.JSON(http.StatusOK, notif)
 	}
 }
@@ -197,14 +204,7 @@ func MarkRead(notifs storage.NotificationRepository) gin.HandlerFunc {
 		userID := c.GetString(middleware.CtxUserID)
 		notifID := c.Param("id")
 
-		notif, err := notifs.FindByID(c.Request.Context(), notifID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
-		}
-
-		if notif.App == nil || notif.App.UserID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		if fetchOwnedNotification(c, notifs, notifID, userID) == nil {
 			return
 		}
 
@@ -222,14 +222,7 @@ func DeleteNotification(notifs storage.NotificationRepository) gin.HandlerFunc {
 		userID := c.GetString(middleware.CtxUserID)
 		notifID := c.Param("id")
 
-		notif, err := notifs.FindByID(c.Request.Context(), notifID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
-		}
-
-		if notif.App == nil || notif.App.UserID != userID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		if fetchOwnedNotification(c, notifs, notifID, userID) == nil {
 			return
 		}
 
