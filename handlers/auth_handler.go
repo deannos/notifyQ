@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/deannos/notification-queue/auth"
@@ -88,7 +89,11 @@ func Register(users storage.UserRepository, cfg *config.Config) gin.HandlerFunc 
 
 		isAdmin, err := users.CreateFirstAdmin(c.Request.Context(), u)
 		if err != nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
+			if strings.Contains(err.Error(), "UNIQUE") {
+				c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			}
 			return
 		}
 
