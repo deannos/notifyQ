@@ -17,7 +17,7 @@ const (
 // JWTAuth validates the Bearer JWT and injects user claims into the context.
 func JWTAuth(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := extractBearerToken(c)
+		token := ExtractBearerToken(c)
 		if token == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or invalid authorization header"})
 			return
@@ -47,32 +47,9 @@ func AdminOnly() gin.HandlerFunc {
 	}
 }
 
-// WSJWTAuth is like JWTAuth but accepts the token from the ?token= query parameter
-// (WebSocket clients cannot set custom headers).
-func WSJWTAuth(cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		token := c.Query("token")
-		if token == "" {
-			token = extractBearerToken(c)
-		}
-		if token == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
-			return
-		}
-
-		claims, err := auth.ParseToken(token, cfg.JWTSecret)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
-			return
-		}
-
-		c.Set(CtxUserID, claims.UserID)
-		c.Set(CtxIsAdmin, claims.IsAdmin)
-		c.Next()
-	}
-}
-
-func extractBearerToken(c *gin.Context) string {
+// ExtractBearerToken returns the token from an "Authorization: Bearer <token>" header,
+// or an empty string if the header is absent or malformed.
+func ExtractBearerToken(c *gin.Context) string {
 	header := c.GetHeader("Authorization")
 	if header == "" {
 		return ""
