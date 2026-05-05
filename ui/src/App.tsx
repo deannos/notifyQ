@@ -1,7 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import { Toaster } from 'sonner';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ThemeProvider } from './context/ThemeContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
+
+const queryClient = new QueryClient();
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
 import { Dashboard } from './components/Dashboard';
@@ -49,12 +53,20 @@ function AppInner() {
   );
 }
 
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return <Toaster theme={theme} richColors position="bottom-right" closeButton />;
+}
+
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <AppInner />
-      </AuthProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppInner />
+        </AuthProvider>
+        <ThemedToaster />
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
