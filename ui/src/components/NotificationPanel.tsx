@@ -1,13 +1,17 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api';
 import type { App, Notification } from '@/types';
 import { MagneticButton } from './MagneticButton';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { CheckIcon, Trash2Icon, SearchIcon, XIcon } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 const LIMIT = 20;
 
@@ -22,82 +26,107 @@ interface Props {
   onLiveConsumed: () => void;
 }
 
-export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
-  const [notifs, setNotifs] = useState<Notification[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [apps, setApps] = useState<App[]>([]);
+interface NotifPage {
+  notifications: Notification[];
+  total: number;
+}
 
-  // Filters
+export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
+  const qc = useQueryClient();
+  const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState('');
   const [filterApp, setFilterApp] = useState('');
   const [filterRead, setFilterRead] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
-  useEffect(() => {
-    api.get<App[]>('/api/v1/application').then(data => setApps(data ?? [])).catch(() => {});
-  }, []);
+  const notifKey = ['notifications', offset, search, filterApp, filterRead, filterPriority] as const;
 
-  const buildQuery = useCallback((off: number) => {
+  const buildUrl = (off: number) => {
     const p = new URLSearchParams({ limit: String(LIMIT), offset: String(off) });
     if (search)         p.set('q', search);
     if (filterApp)      p.set('app_id', filterApp);
     if (filterRead)     p.set('read', filterRead);
     if (filterPriority) p.set('priority', filterPriority);
     return `/api/v1/notification?${p.toString()}`;
-  }, [search, filterApp, filterRead, filterPriority]);
+  };
 
-  const load = useCallback(async (off: number) => {
-    try {
-      const data = await api.get<{ notifications: Notification[]; total: number }>(buildQuery(off));
-      setNotifs(data.notifications ?? []);
-      setTotal(data.total ?? 0);
-    } catch { /* ignore */ }
-  }, [buildQuery]);
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setOffset(0); }, [search, filterApp, filterRead, filterPriority]);
 
-  useEffect(() => {
-    setOffset(0);
-    void load(0);
-  }, [search, filterApp, filterRead, filterPriority, load]);
+  const { data: appsData } = useQuery({
+    queryKey: ['apps'],
+    queryFn: () => api.get<App[]>('/api/v1/application'),
+    staleTime: 60_000,
+  });
+  const apps = appsData ?? [];
 
-  useEffect(() => { void load(offset); }, [offset, load]);
+  const { data: notifData, isLoading } = useQuery({
+    queryKey: notifKey,
+    queryFn: () => api.get<NotifPage>(buildUrl(offset)),
+  });
+  const notifs = notifData?.notifications ?? [];
+  const total = notifData?.total ?? 0;
 
+  // Inject live WebSocket notification into the current page cache
   useEffect(() => {
     if (!liveNotif) return;
-    setNotifs(prev => [liveNotif, ...prev]);
-    setTotal(t => t + 1);
+    qc.setQueryData<NotifPage>(notifKey, prev =>
+      prev
+        ? { notifications: [liveNotif, ...prev.notifications], total: prev.total + 1 }
+        : { notifications: [liveNotif], total: 1 }
+    );
     onLiveConsumed();
-  }, [liveNotif, onLiveConsumed]);
+  // notifKey is derived from state values captured at render; explicit deps below keep it fresh
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveNotif, qc, onLiveConsumed, offset, search, filterApp, filterRead, filterPriority]);
 
-  const markRead = async (id: string) => {
-    await api.put(`/api/v1/notification/${id}/read`);
-    setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  };
+  const markReadMut = useMutation({
+    mutationFn: (id: string) => api.put(`/api/v1/notification/${id}/read`),
+    onMutate: (id) => {
+      qc.setQueryData<NotifPage>(notifKey, prev =>
+        prev ? { ...prev, notifications: prev.notifications.map(n => n.id === id ? { ...n, read: true } : n) } : prev
+      );
+    },
+    onError: () => toast.error('Failed to mark as read'),
+  });
 
-  const deleteNotif = async (id: string) => {
-    await api.del(`/api/v1/notification/${id}`);
-    setNotifs(prev => prev.filter(n => n.id !== id));
-    setTotal(t => Math.max(0, t - 1));
-  };
+  const deleteNotifMut = useMutation({
+    mutationFn: (id: string) => api.del(`/api/v1/notification/${id}`),
+    onMutate: (id) => {
+      qc.setQueryData<NotifPage>(notifKey, prev =>
+        prev ? { notifications: prev.notifications.filter(n => n.id !== id), total: Math.max(0, prev.total - 1) } : prev
+      );
+    },
+    onSuccess: () => toast.success('Notification deleted'),
+    onError: () => { toast.error('Failed to delete notification'); void qc.invalidateQueries({ queryKey: notifKey }); },
+  });
 
-  const markAllRead = async () => {
-    await Promise.all(notifs.filter(n => !n.read).map(n => api.put(`/api/v1/notification/${n.id}/read`)));
-    setNotifs(prev => prev.map(n => ({ ...n, read: true })));
-  };
+  const markAllReadMut = useMutation({
+    mutationFn: (ids: string[]) => Promise.all(ids.map(id => api.put(`/api/v1/notification/${id}/read`))),
+    onMutate: (ids) => {
+      const set = new Set(ids);
+      qc.setQueryData<NotifPage>(notifKey, prev =>
+        prev ? { ...prev, notifications: prev.notifications.map(n => set.has(n.id) ? { ...n, read: true } : n) } : prev
+      );
+    },
+    onSuccess: (_, ids) => toast.success(`Marked ${ids.length} notification${ids.length > 1 ? 's' : ''} as read`),
+    onError: () => toast.error('Failed to mark all as read'),
+  });
 
-  const deleteAll = async () => {
-    if (!confirm('Delete all notifications?')) return;
-    await api.del('/api/v1/notification');
-    setNotifs([]);
-    setTotal(0);
-    setOffset(0);
-  };
+  const deleteAllMut = useMutation({
+    mutationFn: () => api.del('/api/v1/notification'),
+    onSuccess: () => {
+      qc.setQueryData<NotifPage>(notifKey, { notifications: [], total: 0 });
+      setOffset(0);
+      toast.success('All notifications deleted');
+    },
+    onError: () => toast.error('Failed to delete notifications'),
+  });
 
-  const clearFilters = () => {
-    setSearch(''); setFilterApp(''); setFilterRead(''); setFilterPriority('');
-  };
+  const unreadIds = notifs.filter(n => !n.read).map(n => n.id);
+  const clearFilters = () => { setSearch(''); setFilterApp(''); setFilterRead(''); setFilterPriority(''); };
   const hasFilters = search || filterApp || filterRead || filterPriority;
-
   const pages = Math.ceil(total / LIMIT);
   const currentPage = Math.floor(offset / LIMIT) + 1;
   const unreadCount = notifs.filter(n => !n.read).length;
@@ -120,8 +149,21 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
           </p>
         </div>
         <div className="flex gap-2">
-          <MagneticButton variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => void markAllRead()}>Mark all read</MagneticButton>
-          <MagneticButton variant="ghost" size="sm" className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={() => void deleteAll()}>Delete all</MagneticButton>
+          <MagneticButton
+            variant="ghost" size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            disabled={!unreadIds.length || markAllReadMut.isPending}
+            onClick={() => markAllReadMut.mutate(unreadIds)}
+          >
+            Mark all read
+          </MagneticButton>
+          <MagneticButton
+            variant="ghost" size="sm"
+            className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
+            onClick={() => setConfirmDeleteAll(true)}
+          >
+            Delete all
+          </MagneticButton>
         </div>
       </div>
 
@@ -136,31 +178,32 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
             className="pl-8 h-8 text-sm bg-secondary border-0"
           />
         </div>
-        <select
-          value={filterApp}
-          onChange={e => setFilterApp(e.target.value)}
-          className="h-8 px-2 text-xs rounded-md bg-secondary text-foreground border-0 cursor-pointer"
-        >
-          <option value="">All apps</option>
-          {apps.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <select
-          value={filterRead}
-          onChange={e => setFilterRead(e.target.value)}
-          className="h-8 px-2 text-xs rounded-md bg-secondary text-foreground border-0 cursor-pointer"
-        >
-          <option value="">All</option>
-          <option value="false">Unread</option>
-          <option value="true">Read</option>
-        </select>
-        <select
-          value={filterPriority}
-          onChange={e => setFilterPriority(e.target.value)}
-          className="h-8 px-2 text-xs rounded-md bg-secondary text-foreground border-0 cursor-pointer"
-        >
-          <option value="">Any priority</option>
-          {[...Array(11).keys()].map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
+
+        <Select value={filterApp || '__all__'} onValueChange={v => setFilterApp(v === '__all__' ? '' : v)}>
+          <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All apps</SelectItem>
+            {apps.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterRead || '__all__'} onValueChange={v => setFilterRead(v === '__all__' ? '' : v)}>
+          <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All</SelectItem>
+            <SelectItem value="false">Unread</SelectItem>
+            <SelectItem value="true">Read</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={filterPriority || '__all__'} onValueChange={v => setFilterPriority(v === '__all__' ? '' : v)}>
+          <SelectTrigger className="w-[110px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">Any priority</SelectItem>
+            {[...Array(11).keys()].map(p => <SelectItem key={p} value={String(p)}>{p}</SelectItem>)}
+          </SelectContent>
+        </Select>
+
         {hasFilters && (
           <motion.button
             onClick={clearFilters}
@@ -174,7 +217,14 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
 
       {/* List */}
       <ScrollArea className="h-[calc(100vh-280px)]">
-        {notifs.length === 0 && (
+        {isLoading && (
+          <div className="space-y-2 pr-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-20 rounded-lg bg-card animate-pulse" />
+            ))}
+          </div>
+        )}
+        {!isLoading && notifs.length === 0 && (
           <motion.p className="text-center py-16 text-muted-foreground text-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {hasFilters ? 'No notifications match your filters.' : 'No notifications yet.'}
           </motion.p>
@@ -203,11 +253,21 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
                     </div>
                     <div className="flex gap-1 shrink-0">
                       {!n.read && (
-                        <motion.button onClick={() => void markRead(n.id)} className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" whileHover={{ scale: 1.1 }} title="Mark read">
+                        <motion.button
+                          onClick={() => markReadMut.mutate(n.id)}
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          whileHover={{ scale: 1.1 }}
+                          title="Mark read"
+                        >
                           <CheckIcon className="w-3.5 h-3.5" />
                         </motion.button>
                       )}
-                      <motion.button onClick={() => void deleteNotif(n.id)} className="p-1 text-muted-foreground hover:text-destructive transition-colors" whileHover={{ scale: 1.2 }} title="Delete">
+                      <motion.button
+                        onClick={() => deleteNotifMut.mutate(n.id)}
+                        className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                        whileHover={{ scale: 1.2 }}
+                        title="Delete"
+                      >
                         <Trash2Icon className="w-4 h-4" />
                       </motion.button>
                     </div>
@@ -227,6 +287,15 @@ export function NotificationPanel({ liveNotif, onLiveConsumed }: Props) {
           <MagneticButton variant="outline" size="sm" disabled={currentPage >= pages} onClick={() => setOffset(o => o + LIMIT)}>Next →</MagneticButton>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteAll}
+        title="Delete all notifications?"
+        description="This will permanently delete every notification. This cannot be undone."
+        confirmLabel="Delete all"
+        onConfirm={() => deleteAllMut.mutate()}
+        onCancel={() => setConfirmDeleteAll(false)}
+      />
     </div>
   );
 }
