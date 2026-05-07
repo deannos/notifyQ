@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api';
@@ -30,7 +30,7 @@ export function AppPanel() {
   const [deleteAppId, setDeleteAppId] = useState<string | null>(null);
   const [rotateTokenId, setRotateTokenId] = useState<string | null>(null);
 
-  const { data: apps = [] } = useQuery({
+  const { data: apps = [], isLoading } = useQuery({
     queryKey: ['apps'],
     queryFn: () => api.get<App[]>('/api/v1/application').then(d => d ?? []),
     staleTime: 30_000,
@@ -78,8 +78,28 @@ export function AppPanel() {
         <MagneticButton size="sm" onClick={openModal}>+ New App</MagneticButton>
       </div>
 
-      {apps.length === 0 && (
-        <p className="text-center py-10 text-muted-foreground">No applications yet. Create one to start sending notifications.</p>
+      {/* Loading skeletons */}
+      {isLoading && (
+        <div className="space-y-2.5">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-[72px] rounded-lg bg-card animate-pulse" />
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && apps.length === 0 && (
+        <motion.div
+          className="flex flex-col items-center py-20 gap-3 text-muted-foreground"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        >
+          <KeyRoundIcon className="w-10 h-10 opacity-20" />
+          <div className="text-center">
+            <p className="text-sm font-medium">No applications yet</p>
+            <p className="text-xs mt-1 text-muted-foreground/70">Create one to start sending notifications.</p>
+          </div>
+          <MagneticButton size="sm" onClick={openModal}>+ New App</MagneticButton>
+        </motion.div>
       )}
 
       <motion.div
