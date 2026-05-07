@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Button, type ButtonProps } from '@/components/ui/button';
 import { useAntiGravity } from '@/hooks/useAntiGravity';
 import type { MouseEvent } from 'react';
