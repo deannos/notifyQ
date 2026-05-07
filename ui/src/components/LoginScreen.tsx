@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { api } from '@/api';
 import { useAuth } from '@/context/AuthContext';
 import { MagneticButton } from './MagneticButton';
